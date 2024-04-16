@@ -1,7 +1,7 @@
 <script lang="ts">
   import clsx from "clsx";
   import { _ } from "svelte-i18n";
-  import { SpotPay } from "$lib/helpers/mixin";
+  import { goto } from "$app/navigation";
   import {
     buy,
     orderConfirmDialog,
@@ -15,9 +15,10 @@
     marketAmount,
     marketTotal,
   } from "$lib/stores/spot";
+  import { SpotPay } from "$lib/helpers/mixin";
   import { getUuid } from "@mixin.dev/mixin-node-sdk";
-    import { getOrderById } from "$lib/helpers/hufi/spot";
-    import { goto } from "$app/navigation";
+  import { getOrderById } from "$lib/helpers/hufi/spot";
+  import { ORDER_STATE_FETCH_INTERVAL, ORDER_STATE_TIMEOUT_DURATION} from "$lib/helpers/constants";
 
   $: infos = [
     {
@@ -68,25 +69,24 @@
     
     SpotPay({ $orderTypeLimit, buy: $buy, symbol: $pair.symbol, exchange: $pair.exchange, price: String($limitPrice), amount: payAmount, trace})
 
-    const FETCH_INTERVAL = 2000;
-    const TIMEOUT_DURATION = 60000;
+    
     let found = false;
     let totalTime = 0;
 
-    var interval = setInterval(() => {
+    var interval = setInterval(async () => {
       console.log(`${new Date()} called`);
       // TODO: TEST IT;
-      found = getOrderById(trace);
-      totalTime += FETCH_INTERVAL;
+      found = await getOrderById(trace);
+      totalTime += ORDER_STATE_FETCH_INTERVAL;
 
       if (found) {
         clearInterval(interval);
         goto(`/spot/history/${trace}`);
-      } else if (totalTime >= TIMEOUT_DURATION) {
+      } else if (totalTime >= ORDER_STATE_TIMEOUT_DURATION) {
         clearInterval(interval);
         console.log('Timeout reached, stopping execution.');
       }
-    }, FETCH_INTERVAL);
+    }, ORDER_STATE_FETCH_INTERVAL);
 
     setTimeout(() => {
       loading = false;
@@ -170,7 +170,7 @@
       <div class="w-full py-4 mb-4">
         <button
           class={clsx(
-            "btn btn-md w-full rounded-full bg-base-content hover:bg-base-content focus:bg-base-content no-animation",
+            "btn btn-md w-full rounded-full bg-slate-800 hover:bg-slate-800 focus:bg-slate-800 no-animation",
           )}
           on:click={confirmPayment}
         >

@@ -1,8 +1,14 @@
 <script lang="ts">
   import clsx from "clsx";
   import { _ } from "svelte-i18n"
+  import { v4 as uuidv4 } from "uuid";
+  import { goto } from "$app/navigation";
+  import { MarketMakingPay } from "$lib/helpers/mixin";
+  import { decodeSymbolToAssetID } from "$lib/helpers/utils";
   import { findCoinIconBySymbol } from "$lib/helpers/helpers";
+  import { getPaymentState } from "$lib/helpers/hufi/strategy";
   import { createMMConfirmDialog, createMMEasyPair, createMMEasyAmounts } from "$lib/stores/grow"
+  import { ORDER_STATE_FETCH_INTERVAL, ORDER_STATE_TIMEOUT_DURATION } from "$lib/helpers/constants";
 
   $: baseAssetSymbol = $createMMEasyPair.symbol.split("/")[0] || ''
   $: baseAssetAmount = $createMMEasyAmounts[0]
@@ -13,13 +19,62 @@
   let btn2Loading = false;
   let btn1Paid = false;
   let btn2Paid = false;
+  let orderId = uuidv4();
+  let traceId: string | undefined;
 
   const payment = (type: string) => {
-    if (type === '1') btn1Loading = true;
-    if (type === '2') btn2Loading = true;
-    btn1Paid = false;
-    btn2Paid = false;
-  }
+    const ids = decodeSymbolToAssetID($createMMEasyPair.symbol);
+    if (!ids?.firstAssetID || !ids.secondAssetID) {
+      console.error('Unable to get asset id from symbol')
+      return;
+    }
+
+    if (type === '1') {
+      btn1Loading = true;
+      traceId = MarketMakingPay({
+        action: 'CR', 
+        exchange: $createMMEasyPair.exchange,
+        symbol: $createMMEasyPair.symbol,
+        amount: baseAssetAmount,
+        assetId: ids.firstAssetID,
+        orderId,
+      })
+    }
+    if (type === '2') {
+      btn2Loading = true;
+      traceId = MarketMakingPay({
+        action: 'CR', 
+        exchange: $createMMEasyPair.exchange,
+        symbol: $createMMEasyPair.symbol,
+        amount: targetAssetAmount,
+        assetId: ids.secondAssetID,
+        orderId,
+      })
+    }
+    console.log(`traceId${type}:${traceId}`)
+    if (btn1Loading && btn2Loading) {
+      let totalTime = 0;
+      var interval = setInterval(async () => {
+        const state = await getPaymentState(orderId);
+        // console.log(`state: ${JSON.stringify(state)}`)
+        totalTime += ORDER_STATE_FETCH_INTERVAL;
+        if (!state) {
+          return;
+        }
+        if (state.data.firstSnapshotId) {
+          btn1Loading = false;
+          btn1Paid = true;
+        }
+
+        if (state.data.secondSnapshotId) {
+          clearInterval(interval);
+          goto(`/grow/market_making/${orderId}`);
+        } else if (totalTime >= ORDER_STATE_TIMEOUT_DURATION) {
+          clearInterval(interval);
+          console.log('Timeout reached, stopping execution.');
+        }
+      }, ORDER_STATE_FETCH_INTERVAL);
+    }  }
 </script>
 
 <dialog
@@ -61,8 +116,12 @@
             </div>
             <div class="flex">
               <button class={
-                clsx("btn btn-xs bg-base-content text-base-100 rounded-full !h-[2rem]", "hover:bg-base-content no-animation"
-              )} on:click={()=>{ payment('1') }}>
+                clsx(
+                  "btn btn-xs bg-slate-800 text-base-100 rounded-full !h-[2rem]", "hover:bg-slate-800 no-animation"
+                )} 
+                on:click={()=>{ payment('1') }}
+                data-testid='pay-btn-1'
+              >
                 {#if !btn1Paid}
                   <span class={clsx("mx-2", btn1Loading && "loading loading-sm")}>
                     {$_('pay')}
@@ -82,8 +141,9 @@
               <span class="font-bold"> {targetAssetAmount} {targetAssetSymbol} </span>
             </div>
             <div class="flex">
-              <button class="btn btn-xs bg-base-content text-base-100 rounded-full !h-[2rem] hover:bg-base-content no-animation"
+              <button class="btn btn-xs bg-slate-800 text-base-100 rounded-full !h-[2rem] hover:bg-slate-800 no-animation"
                 on:click={()=>{ payment('2') }}
+                data-testid='pay-btn-2'
               >
                 {#if !btn2Paid}
                   <span class={clsx("mx-2", btn2Loading && "loading loading-sm")}>

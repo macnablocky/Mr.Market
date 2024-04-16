@@ -1,13 +1,18 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import * as ccxt from 'ccxt';
-import { TradeService } from '../trade/trade.service';
 import {
   ArbitrageStrategyDto,
   PureMarketMakingStrategyDto,
-} from './strategy.dto';
-import { PerformanceService } from '../performance/performance.service';
+} from 'src/modules/strategy/strategy.dto';
+import { TradeService } from 'src/modules/trade/trade.service';
+import { CustomLogger } from 'src/modules/logger/logger.service';
 import { PriceSourceType } from 'src/common/enum/pricesourcetype';
-import { CustomLogger } from '../logger/logger.service';
+import { PerformanceService } from '../performance/performance.service';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { StrategyKey, createStrategyKey } from 'src/common/helpers/strategyKey';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { MarketMakingHistory } from 'src/common/entities/mm-order.entity';
+import { ArbitrageHistory } from 'src/common/entities/arbitrage-order.entity';
 
 @Injectable()
 export class StrategyService {
@@ -31,6 +36,10 @@ export class StrategyService {
   constructor(
     private tradeService: TradeService,
     private performanceService: PerformanceService,
+    @InjectRepository(MarketMakingHistory)
+    private orderRepository: Repository<MarketMakingHistory>,
+    @InjectRepository(ArbitrageHistory)
+    private arbitrageHistoryRepository: Repository<ArbitrageHistory>,
   ) {
     this.initializeExchanges();
     process.on('SIGINT', () => this.handleShutdown());
@@ -40,6 +49,13 @@ export class StrategyService {
 
   private async initializeExchanges() {
     // Initialize exchanges
+    this.exchanges.set(
+      'okx',
+      new ccxt.pro.okx({
+        apiKey: process.env.OKX_API_KEY,
+        secret: process.env.OKX_SECRET,
+      }),
+    );
     this.exchanges.set(
       'bitfinex',
       new ccxt.pro.bitfinex({
@@ -71,10 +87,32 @@ export class StrategyService {
     return supportedExchanges;
   }
 
+  async startArbitrageIfNotStarted(
+    strategyKey: string,
+    strategyParamsDto: ArbitrageStrategyDto,
+  ) {
+    if (this.strategyInstances.has(strategyKey)) {
+      return;
+    }
+    return await this.startArbitrageStrategyForUser(strategyParamsDto);
+  }
+
+  async pauseStrategyIfNotPaused(key: StrategyKey) {
+    const strategyKey = createStrategyKey(key);
+    if (!this.strategyInstances.has(strategyKey)) {
+      return;
+    }
+    return await this.stopStrategyForUser(key.user_id, key.client_id, key.type);
+  }
+
   async startArbitrageStrategyForUser(strategyParamsDto: ArbitrageStrategyDto) {
     const { userId, clientId, pair, exchangeAName, exchangeBName } =
       strategyParamsDto;
-    const strategyKey = `${userId}-${clientId}-Arbitrage`;
+    const strategyKey = createStrategyKey({
+      type: 'arbitrage',
+      user_id: userId,
+      client_id: clientId,
+    });
     const exchangeA: ccxt.Exchange = this.exchanges.get(exchangeAName);
     const exchangeB: ccxt.Exchange = this.exchanges.get(exchangeBName);
 
@@ -123,10 +161,18 @@ export class StrategyService {
     );
 
     let strategyKey;
-    if (strategyType === 'Arbitrage') {
-      strategyKey = `${userId}-${clientId}-Arbitrage`;
+    if (strategyType === 'arbitrage') {
+      strategyKey = createStrategyKey({
+        type: 'arbitrage',
+        user_id: userId,
+        client_id: clientId,
+      });
     } else if (strategyType === 'pureMarketMaking') {
-      strategyKey = `${userId}-${clientId}-pureMarketMaking`;
+      strategyKey = createStrategyKey({
+        type: 'pureMarketMaking',
+        user_id: userId,
+        client_id: clientId,
+      });
     }
 
     // Cancel all orders for this strategy before stopping
@@ -179,6 +225,16 @@ export class StrategyService {
     }
   }
 
+  async startMarketMakingIfNotStarted(
+    strategyKey: string,
+    strategyParamsDto: PureMarketMakingStrategyDto,
+  ) {
+    if (this.strategyInstances.has(strategyKey)) {
+      return;
+    }
+    return await this.executePureMarketMakingStrategy(strategyParamsDto);
+  }
+
   async executePureMarketMakingStrategy(
     strategyParamsDto: PureMarketMakingStrategyDto,
   ) {
@@ -198,7 +254,11 @@ export class StrategyService {
       ceilingPrice,
       floorPrice,
     } = strategyParamsDto;
-    const strategyKey = `${userId}-${clientId}-pureMarketMaking`;
+    const strategyKey = createStrategyKey({
+      type: 'pureMarketMaking',
+      user_id: userId,
+      client_id: clientId,
+    });
 
     // Ensure the strategy is not already running
     if (this.strategyInstances.has(strategyKey)) {
@@ -266,7 +326,11 @@ export class StrategyService {
     await this.cancelAllOrders(
       exchange,
       pair,
-      `${userId}-${clientId}-pureMarketMaking`,
+      createStrategyKey({
+        type: 'pureMarketMaking',
+        user_id: userId,
+        client_id: clientId,
+      }),
     );
 
     let currentOrderAmount = baseOrderAmount;
@@ -300,7 +364,7 @@ export class StrategyService {
           buyPrice,
         );
 
-        await this.tradeService.executeLimitTrade({
+        const order = await this.tradeService.executeLimitTrade({
           userId,
           clientId,
           exchange: exchangeName,
@@ -309,6 +373,23 @@ export class StrategyService {
           amount: parseFloat(adjustedBuyAmount),
           price: parseFloat(adjustedBuyPrice),
         });
+
+        // Create and save the order entity
+        const orderEntity = this.orderRepository.create({
+          userId,
+          clientId,
+          exchange: exchangeName,
+          pair,
+          side: 'buy',
+          amount: parseFloat(adjustedBuyAmount),
+          price: parseFloat(adjustedBuyPrice),
+          orderId: order.id,
+          executedAt: new Date(), // Assuming immediate execution; adjust as necessary
+          status: order.status,
+          strategy: 'pureMarketMaking',
+        });
+
+        await this.orderRepository.save(orderEntity);
       } else {
         this.logger.log(
           `Skipping buy order for ${pair} as price source ${priceSource} is above the ceiling price ${ceilingPrice}.`,
@@ -327,7 +408,7 @@ export class StrategyService {
           sellPrice,
         );
 
-        await this.tradeService.executeLimitTrade({
+        const order = await this.tradeService.executeLimitTrade({
           userId,
           clientId,
           exchange: exchangeName,
@@ -336,6 +417,23 @@ export class StrategyService {
           amount: parseFloat(adjustedSellAmount),
           price: parseFloat(adjustedSellPrice),
         });
+
+        // Create and save the order entity
+        const orderEntity = this.orderRepository.create({
+          userId,
+          clientId,
+          exchange: exchangeName,
+          pair,
+          side: 'sell',
+          amount: parseFloat(adjustedSellAmount),
+          price: parseFloat(adjustedSellPrice),
+          orderId: order.id,
+          executedAt: new Date(),
+          status: order.status,
+          strategy: 'pureMarketMaking',
+        });
+
+        await this.orderRepository.save(orderEntity);
       } else {
         this.logger.log(
           `Skipping sell order for ${pair} as price source ${priceSource} is below the floor price ${floorPrice}.`,
@@ -435,7 +533,11 @@ export class StrategyService {
     const cacheKeyB = `${pair}-${exchangeB.id}`;
     const cachedOrderBookA = this.orderBookCache.get(cacheKeyA);
     const cachedOrderBookB = this.orderBookCache.get(cacheKeyB);
-    const strategyKey = `${userId}-${clientId}-Arbitrage`;
+    const strategyKey = createStrategyKey({
+      type: 'arbitrage',
+      user_id: userId,
+      client_id: clientId,
+    });
 
     // Check and clean filled orders before evaluating opportunities
     const allOrdersFilled = await this.checkAndCleanFilledOrders(strategyKey);
@@ -468,13 +570,31 @@ export class StrategyService {
         this.logger.log(
           `User ${userId}, Client ${clientId}: Arbitrage opportunity for ${pair} (VWAP): Buy on ${exchangeA.name} at ${vwapA}, sell on ${exchangeB.name} at ${vwapB}`,
         );
-        //  await this.executeArbitrageTradeWithLimitOrders(exchangeA, exchangeB, pair, amountToTrade, userId, clientId, vwapA, vwapB);
+        await this.executeArbitrageTradeWithLimitOrders(
+          exchangeA,
+          exchangeB,
+          pair,
+          amountToTrade,
+          userId,
+          clientId,
+          vwapA,
+          vwapB,
+        );
       } else if ((vwapA - vwapB) / vwapB >= minProfitability) {
         // Execute trades in reverse direction
         this.logger.log(
           `User ${userId}, Client ${clientId}: Arbitrage opportunity for ${pair} (VWAP): Buy on ${exchangeB.name} at ${vwapB}, sell on ${exchangeA.name} at ${vwapA}`,
         );
-        // await this.executeArbitrageTradeWithLimitOrders(exchangeB, exchangeA, pair, amountToTrade, userId, clientId, vwapB, vwapA);
+        await this.executeArbitrageTradeWithLimitOrders(
+          exchangeB,
+          exchangeA,
+          pair,
+          amountToTrade,
+          userId,
+          clientId,
+          vwapB,
+          vwapA,
+        );
       }
     } else {
       this.logger.log(
@@ -493,7 +613,11 @@ export class StrategyService {
     buyPrice: number,
     sellPrice: number,
   ) {
-    const strategyKey = `${userId}-${clientId}-Arbitrage`;
+    const strategyKey = createStrategyKey({
+      type: 'arbitrage',
+      user_id: userId,
+      client_id: clientId,
+    });
     try {
       // Place buy limit order on Exchange A
       const buyOrder = await this.tradeService.executeLimitTrade({
@@ -537,6 +661,21 @@ export class StrategyService {
       const profitLoss =
         sellPrice * amount - sellFee - (buyPrice * amount + buyFee);
 
+      // Save the arbitrage order details
+      const arbitrageOrder = this.arbitrageHistoryRepository.create({
+        userId,
+        clientId,
+        pair: symbol,
+        exchangeAName: exchangeA.name,
+        exchangeBName: exchangeB.name,
+        amount,
+        buyPrice,
+        sellPrice,
+        profit: profitLoss,
+        executedAt: new Date(),
+      });
+
+      await this.arbitrageHistoryRepository.save(arbitrageOrder);
       // Log and record the trade execution and performance
       this.logger.log(
         `Arbitrage trade executed with limit orders for user ${userId}, client ${clientId}: Buy on ${exchangeA.id} at ${buyPrice}, sell on ${exchangeB.id} at ${sellPrice}, Profit/Loss: ${profitLoss}`,
@@ -565,6 +704,20 @@ export class StrategyService {
         `Failed to execute arbitrage trade with limit orders: ${error.message}`,
       );
     }
+  }
+
+  // Fetch regular orders for a specific user
+  async getUserOrders(userId: string): Promise<MarketMakingHistory[]> {
+    return await this.orderRepository.find({
+      where: { userId },
+    });
+  }
+
+  // Fetch arbitrage orders for a specific user
+  async getUserArbitrageHistorys(userId: string): Promise<ArbitrageHistory[]> {
+    return await this.arbitrageHistoryRepository.find({
+      where: { userId },
+    });
   }
 
   private calculateVWAPForAmount(

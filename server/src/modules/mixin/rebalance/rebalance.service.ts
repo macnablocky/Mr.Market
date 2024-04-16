@@ -24,7 +24,9 @@ export class RebalanceService {
     private exchangeService: ExchangeService,
     private snapshotService: SnapshotsService,
     private rebalanceRepository: RebalanceRepository,
-  ) {}
+  ) {
+    // TODO: Initalize minium balance table
+  }
 
   // We build a table which we can set the minium rebalance value for every asset in every exchange
   //
@@ -114,7 +116,12 @@ export class RebalanceService {
             BigNumber(mixinSymbolBalanceMap[symbol] || 0).gt(minAmount)
           ) {
             this.logger.log(`Rebalance ${symbol} from Mixin to exchange`);
-            await this.rebalanceFromMixinToExchange(symbol, balance, exchange, mixinSymbolBalanceMap[symbol]);
+            await this.rebalanceFromMixinToExchange(
+              symbol,
+              balance,
+              exchange,
+              mixinSymbolBalanceMap[symbol],
+            );
           }
         }
       }

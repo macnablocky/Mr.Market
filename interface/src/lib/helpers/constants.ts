@@ -5,7 +5,7 @@ export const AppName = "Mr.market"
 export const AppURL = env.PUBLIC_APP_URL || "https://mr-market-one.vercel.app"
 
 export const SHOW_BAR = env.PUBLIC_SHOW_BAR || true
-export const BOT_ID = env.PUBLIC_BOT_ID || '3fb68263-4f06-476e-83db-503d25d56b93'
+export const BOT_ID = env.PUBLIC_BOT_ID || '73179ddc-3e29-485b-bb13-03f514d4318e'
 export const OAUTH_SCOPE = env.PUBLIC_OAUTH_SCOPE || 'PROFILE:READ ASSETS:READ SNAPSHOTS:READ'
 export const MIXIN_MESSENGER_INSTALL = env.PUBLIC_MIXIN_MESSENGER_INSTALL || 'https://messenger.mixin.one/install'
 export const MIXIN_API_BASE_URL = env.PUBLIC_MIXIN_API_BASE_URL || 'https://api.mixin.one'
@@ -13,6 +13,9 @@ export const MIXIN_API_BASE_URL = env.PUBLIC_MIXIN_API_BASE_URL || 'https://api.
 export const HUFI_SOCKET_URL = env.PUBLIC_HUFI_SOCKET_URL || '//mrmarket-production.up.railway.app'
 export const HUFI_BACKEND_URL = env.PUBLIC_HUFI_BACKEND_URL || 'https://mrmarket-production.up.railway.app'
 export const HUMAN_PROTOCOL_GROUP_URL = env.PUBLIC_HUMAN_PROTOCOL_GROUP_URL || 'https://mixin.one/apps/5a33fc52-f445-4170-a06a-47f8be94a8f3'
+
+export const ORDER_STATE_FETCH_INTERVAL = 3000
+export const ORDER_STATE_TIMEOUT_DURATION = 180000
 
 // It must sync with server/pairs.ts
 export const PAIRS_MAP = {

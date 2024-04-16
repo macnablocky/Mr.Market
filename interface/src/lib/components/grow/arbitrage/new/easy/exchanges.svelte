@@ -5,9 +5,11 @@
   import { maskOption } from "$lib/helpers/constants";
   import {
     createArbAmount,
+    createArbConfirmDialog,
     createArbExchange1,
     createArbExchange2,
     createArbPair,
+    editArbitrageDialog,
     selectArbExchange1Dialog,
     selectArbExchange2Dialog,
     selectArbPairDialog,
@@ -16,12 +18,22 @@
     findCoinIconBySymbol,
     findExchangeIconByIdentifier,
   } from "$lib/helpers/helpers";
+  import { onDestroy } from "svelte";
+
+  onDestroy(() => {
+    createArbAmount.set([]);
+    createArbExchange1.set("");
+    createArbExchange2.set("");
+    createArbPair.set("");
+    createArbConfirmDialog.set(false);
+    editArbitrageDialog.set(false);
+  });
 </script>
 
 <div class="flex flex-col space-y-8">
   <!-- 1. Select both exchange -->
   <div class="flex flex-col space-y-2 mx-2">
-    <span class="text-sm">
+    <span class="text-sm font-bold">
       {$_("exchange1")}
     </span>
 
@@ -31,6 +43,7 @@
         on:click={() => {
           selectArbExchange1Dialog.set(!$selectArbExchange1Dialog);
         }}
+        data-testid="select-exchange-1"
       >
         <div class="flex items-center space-x-2">
           {#if $createArbExchange1}
@@ -86,7 +99,7 @@
   </div>
 
   <div class="flex flex-col space-y-2 mx-2">
-    <span class="text-sm">
+    <span class="text-sm font-bold">
       {$_("exchange2")}
     </span>
 
@@ -96,6 +109,7 @@
         on:click={() => {
           selectArbExchange2Dialog.set(!$selectArbExchange2Dialog);
         }}
+        data-testid="select-exchange-2"
       >
         <div class="flex items-center space-x-2">
           {#if $createArbExchange2}
@@ -151,7 +165,7 @@
   </div>
   <!-- 2. Select trading pair -->
   <div class="flex flex-col space-y-2 mx-2">
-    <span class="text-sm">
+    <span class="text-sm font-bold">
       {$_("trading_pair")}
     </span>
 
@@ -161,6 +175,7 @@
         on:click={() => {
           selectArbPairDialog.set(!$selectArbPairDialog);
         }}
+        data-testid="select-trading-pair"
       >
         <span class={clsx("font-medium", $createArbPair ? "" : "opacity-40")}>
           {$createArbPair ? $createArbPair : $_("select_a_pair")}
@@ -199,16 +214,15 @@
   <!-- 3. Enter amount of each token -->
   {#if $createArbPair}
     <div class="flex flex-col space-y-2">
-      <div class="flex justify-between mx-2">
-        <span class="text-sm">
-          {$_("amount")}
-        </span>
-      </div>
-
+      <hr />
       {#each Array(2) as _, i}
         <div class="flex items-center justify-between space-x-2 mx-2">
           <div class="flex space-x-2">
-            <img src={findCoinIconBySymbol($createArbPair.split("/")[i])} class="w-6 h-6" alt="" />
+            <img
+              src={findCoinIconBySymbol($createArbPair.split("/")[i])}
+              class="w-6 h-6"
+              alt=""
+            />
             <span class="font-semibold">
               {$createArbPair.split("/")[i]}
             </span>
@@ -220,10 +234,11 @@
               class={clsx(
                 "input focus:border-none focus:outline-none join-item w-full",
               )}
+              data-testid={`amount-input-${i}`}
               bind:value={$createArbAmount[i]}
             />
             <div class="join-item mr-2">
-              <span class="text-sm opacity-60"> 
+              <span class="text-sm opacity-60">
                 {$createArbPair.split("/")[i]}
               </span>
             </div>
@@ -234,6 +249,11 @@
   {/if}
 </div>
 
-<!-- 4. Create arbitrage order, confirm payment -->
-
-<!-- 5. Redirect to arbtirage details page -->
+<style>
+  hr {
+    border-top: 1px solid #eeeeee;
+    margin-left: 10px;
+    margin-right: 10px;
+    padding-bottom: 20px;
+  }
+</style>

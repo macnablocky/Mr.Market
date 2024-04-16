@@ -21,7 +21,8 @@ export const marketQueryFn = async (category: string) =>  {
     const re = await r.json()
     return re
   } catch (e) {
-    throw error('Server error')
+    console.error('Server error')
+    return []
   }
 }
 
@@ -63,11 +64,4 @@ export const coinMarketChart = async (name: string, ranges: TokenChartTimeFrame,
 
   const r = await fetch(url)
   return  await r.json()
-}
-
-export const getArbitrageById = async (id: string) => {
-  console.log(id)
-  const r = await fetch(`${HUFI_BACKEND_URL}`)
-  const res = await r.json()
-  return res
 }

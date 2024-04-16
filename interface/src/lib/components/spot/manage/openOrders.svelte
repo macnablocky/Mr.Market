@@ -1,6 +1,6 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { userOrders } from "$lib/stores/wallet";
+  import { userSpotOrders } from "$lib/stores/wallet";
   import { mixinConnected } from "$lib/stores/home";
   import { openedOrders, orderFilterMode } from "$lib/stores/spot";
   import SingleOrder from "$lib/components/spot/manage/singleOrder.svelte";
@@ -8,7 +8,7 @@
   import CancelOrder from "$lib/components/dialogs/manageOrder/cancelOrder.svelte";
   import OrderFilter from "$lib/components/dialogs/manageOrder/orderFilter.svelte";
   
-  $: filteredOrders = $userOrders.length > 0? $userOrders.filter((item)=>{
+  $: filteredOrders = $userSpotOrders.length > 0? $userSpotOrders.filter((item)=>{
     return item.state.includes('EXCHANGE_ORDER_PARTIAL_FILLED') || item.state.includes('ORDER_CREATED')
   }).filter((item) => {
     switch ($orderFilterMode) {
@@ -91,7 +91,7 @@
     <span class="text-sm opacity-60">
       {$_("connect_wallet_order_intro")}
     </span>
-    <ConnectWalletBtn clazz="btn-sm h-[2.5rem]" />
+    <ConnectWalletBtn clazz="text-slate-800 !bg-base-200" />
   </div>
 {/if}
 
